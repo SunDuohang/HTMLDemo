@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>联邦迁移学习 (FTL) 过程可视化演示</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        h2 { color: #2c3e50; margin-bottom: 10px; }
+        .controls { margin-bottom: 25px; }
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #3498db;
+            color: white;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #2980b9; }
+        button:active { background-color: #1c598a; }
+        .viz-area { border: 1px solid #eee; border-radius: 8px; background: #fafafa; }
+        .legend {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 13px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .status-text { margin-top: 15px; font-weight: bold; color: #e67e22; height: 24px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>联邦迁移学习 (FTL) 动态仿真演示</h2>
+    <div class="controls">
+        <button onclick="reset()">初始状态</button>
+        <button onclick="stage1()">第一阶段：伪数据挤压</button>
+        <button onclick="stage2()">第二阶段：目标域对齐</button>
+    </div>
+
+    <svg id="viz" width="600" height="400" class="viz-area"></svg>
+
+    <div class="status-text" id="status">准备就绪：源域数据待训练</div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="dot" style="background: #ff7675;"></div> 源域类别 1</div>
+        <div class="legend-item"><div class="dot" style="background: #74b9ff;"></div> 源域类别 2</div>
+        <div class="legend-item"><div class="dot" style="background: #55efc4;"></div> 源域类别 3</div>
+        <div class="legend-item"><div class="dot" style="background: #dfe6e9; border:1px solid #b2bec3;"></div> 伪数据</div>
+        <div class="legend-item"><div class="dot" style="border: 2px solid #636e72; background:none;"></div> 目标域数据</div>
+    </div>
+</div>
+
+<script>
+    const width = 600;
+    const height = 400;
+    const svg = d3.select("#viz");
+    const status = d3.select("#status");
+
+    // 中心点定义
+    const centers = [
+        {id: 1, x: 200, y: 150, color: "#ff7675"},
+        {id: 2, x: 400, y: 150, color: "#74b9ff"},
+        {id: 3, x: 300, y: 300, color: "#55efc4"}
+    ];
+
+    // 生成随机点
+    function generatePoints(center, count, std) {
+        return Array.from({length: count}, () => ({
+            cx: center.x + (Math.random() - 0.5) * std,
+            cy: center.y + (Math.random() - 0.5) * std,
+            color: center.color,
+            class: center.id
+        }));
+    }
+
+    let sourcePoints = [];
+    let fakePoints = [];
+    let targetPoints = [];
+
+    function initData() {
+        sourcePoints = [];
+        centers.forEach(c => {
+            sourcePoints.push(...generatePoints(c, 40, 80));
+        });
+        
+        // 预生成伪数据（初始隐藏）
+        fakePoints = [];
+        for(let i=0; i<150; i++) {
+            fakePoints.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                opacity: 0
+            });
+        }
+
+        // 目标域数据（初始偏移）
+        targetPoints = [];
+        centers.forEach(c => {
+            targetPoints.push(...generatePoints({x: c.x - 60, y: c.y - 50, color: "none"}, 15, 40).map(p => ({
+                ...p, targetX: c.x, targetY: c.y
+            })));
+        });
+    }
+
+    function reset() {
+        initData();
+        status.text("准备就绪：源域数据分布较为松散");
+        render();
+    }
+
+    function render() {
+        // 源域点
+        const dots = svg.selectAll(".source-dot").data(sourcePoints);
+        dots.enter().append("circle").attr("class", "source-dot")
+            .merge(dots)
+            .transition().duration(800)
+            .attr("r", 5)
+            .attr("cx", d => d.cx)
+            .attr("cy", d => d.cy)
+            .attr("fill", d => d.color);
+
+        // 伪数据点
+        const fakes = svg.selectAll(".fake-dot").data(fakePoints);
+        fakes.enter().append("circle").attr("class", "fake-dot")
+            .merge(fakes)
+            .attr("r", 3)
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("fill", "#dfe6e9")
+            .attr("stroke", "#b2bec3")
+            .attr("opacity", 0);
+
+        // 目标域点
+        svg.selectAll(".target-dot").remove();
+    }
+
+    function stage1() {
+        status.text("第一阶段：生成伪数据，强制压缩真实类别的边界");
+        
+        // 伪数据显现
+        svg.selectAll(".fake-dot")
+            .transition().duration(1000)
+            .attr("opacity", 0.6);
+
+        // 源域数据收缩（模拟边界压缩）
+        svg.selectAll(".source-dot")
+            .transition().duration(1200).ease(d3.easeCubicInOut)
+            .attr("cx", d => {
+                const c = centers.find(center => center.id === d.class);
+                return c.x + (d.cx - c.x) * 0.25; // 向中心收敛
+            })
+            .attr("cy", d => {
+                const c = centers.find(center => center.id === d.class);
+                return c.y + (d.cy - c.y) * 0.25;
+            });
+    }
+
+    function stage2() {
+        status.text("第二阶段：目标域数据通过特征提取器映射，实现特征对齐");
+
+        // 绘制目标域数据（初始偏移位置）
+        const targets = svg.selectAll(".target-dot").data(targetPoints);
+        targets.enter().append("circle").attr("class", "target-dot")
+            .attr("r", 5)
+            .attr("cx", d => d.cx)
+            .attr("cy", d => d.cy)
+            .attr("fill", "none")
+            .attr("stroke", "#636e72")
+            .attr("stroke-width", 2)
+            .attr("opacity", 0)
+            .transition().duration(500).attr("opacity", 1)
+            .transition().delay(500).duration(1500).ease(d3.easeExpInOut)
+            .attr("cx", d => d.targetX + (Math.random()-0.5)*15)
+            .attr("cy", d => d.targetY + (Math.random()-0.5)*15);
+    }
+
+    reset();
+</script>
+</body>
+</html>
