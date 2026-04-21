@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCE Loss 矢量化计算 (Batch Size = 3)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --danger-color: #dc2626;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .sample-card {
+            background: #f1f5f9;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .sample-card h3 {
+            margin-top: 0;
+            color: #334155;
+            font-size: 1.1rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .math-box {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
+            font-size: 1.1rem;
+            margin-top: 15px;
+        }
+
+        .highlight-loss {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        .mean-loss-box {
+            background: #eff6ff;
+            border: 2px solid #bfdbfe;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .mean-loss-box .title {
+            font-size: 1.1rem;
+            color: #1e40af;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .mean-loss-box .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--danger-color);
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>BCE Loss 矢量化计算 (一致性损失演示)</h1>
+    <p class="subtitle">目标向量 Y = [1, 1, 1] 时的逐元素运算与批次均值</p>
+
+    <div class="grid">
+        <div class="sample-card">
+            <h3>样本 1</h3>
+            <div class="control-group">
+                <label>相似度 (S₁): <span id="s1-val" style="color:var(--primary-color)">0.90</span></label>
+                <input type="range" id="s1" min="0.01" max="0.99" step="0.01" value="0.90" oninput="update()">
+            </div>
+            <div class="math-box">
+                L₁ = -ln(<span id="s1-math">0.90</span>)<br>= <span id="l1-val" class="highlight-loss">0.105</span>
+            </div>
+        </div>
+
+        <div class="sample-card">
+            <h3>样本 2</h3>
+            <div class="control-group">
+                <label>相似度 (S₂): <span id="s2-val" style="color:var(--primary-color)">0.40</span></label>
+                <input type="range" id="s2" min="0.01" max="0.99" step="0.01" value="0.40" oninput="update()">
+            </div>
+            <div class="math-box">
+                L₂ = -ln(<span id="s2-math">0.40</span>)<br>= <span id="l2-val" class="highlight-loss">0.916</span>
+            </div>
+        </div>
+
+        <div class="sample-card">
+            <h3>样本 3</h3>
+            <div class="control-group">
+                <label>相似度 (S₃): <span id="s3-val" style="color:var(--primary-color)">0.10</span></label>
+                <input type="range" id="s3" min="0.01" max="0.99" step="0.01" value="0.10" oninput="update()">
+            </div>
+            <div class="math-box">
+                L₃ = -ln(<span id="s3-math">0.10</span>)<br>= <span id="l3-val" class="highlight-loss">2.303</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="mean-loss-box">
+        <div class="title">最终批量一致性损失 (Batch Mean Loss)</div>
+        <div class="value" id="mean-loss-val">1.1080</div>
+        <div style="color: #64748b; font-size: 0.9rem; margin-top: 5px;">( L₁ + L₂ + L₃ ) / 3</div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="batchChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let chart;
+    
+    function initChart() {
+        const ctx = document.getElementById('batchChart').getContext('2d');
+        
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['样本 1', '样本 2', '样本 3'],
+                datasets: [
+                    {
+                        label: '内积相似度 (S)',
+                        data: [0.9, 0.4, 0.1],
+                        backgroundColor: 'rgba(37, 99, 235, 0.8)', // 蓝色
+                        borderColor: '#1d4ed8',
+                        borderWidth: 1,
+                        yAxisID: 'y1',
+                        borderRadius: 4
+                    },
+                    {
+                        label: '损失惩罚值 (Loss)',
+                        data: [0.105, 0.916, 2.303],
+                        backgroundColor: 'rgba(220, 38, 38, 0.8)', // 红色
+                        borderColor: '#b91c1c',
+                        borderWidth: 1,
+                        yAxisID: 'y',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: '损失惩罚值 (趋于无穷)', color: '#dc2626', font: {weight: 'bold'} },
+                        suggestedMax: 5,
+                        grid: { color: '#f1f5f9' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: '相似度概率 (0 ~ 1)', color: '#2563eb', font: {weight: 'bold'} },
+                        min: 0,
+                        max: 1.2, // 留出顶部空间
+                        grid: { drawOnChartArea: false } // 不重复绘制网格线
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toFixed(3);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function update() {
+        // 1. 获取滑动条的值
+        const s1 = parseFloat(document.getElementById('s1').value);
+        const s2 = parseFloat(document.getElementById('s2').value);
+        const s3 = parseFloat(document.getElementById('s3').value);
+        
+        // 2. 更新界面文本显示
+        document.getElementById('s1-val').innerText = s1.toFixed(2);
+        document.getElementById('s2-val').innerText = s2.toFixed(2);
+        document.getElementById('s3-val').innerText = s3.toFixed(2);
+        
+        document.getElementById('s1-math').innerText = s1.toFixed(2);
+        document.getElementById('s2-math').innerText = s2.toFixed(2);
+        document.getElementById('s3-math').innerText = s3.toFixed(2);
+
+        // 3. 计算各个样本的 Loss (目标标签 y 为 1，故退化为 -ln(x))
+        const l1 = -Math.log(s1);
+        const l2 = -Math.log(s2);
+        const l3 = -Math.log(s3);
+
+        document.getElementById('l1-val').innerText = l1.toFixed(3);
+        document.getElementById('l2-val').innerText = l2.toFixed(3);
+        document.getElementById('l3-val').innerText = l3.toFixed(3);
+
+        // 4. 计算并更新批量平均 Loss (Reduction = 'mean')
+        const meanLoss = (l1 + l2 + l3) / 3.0;
+        document.getElementById('mean-loss-val').innerText = meanLoss.toFixed(4);
+
+        // 5. 更新图表数据
+        chart.data.datasets[0].data = [s1, s2, s3];
+        chart.data.datasets[1].data = [l1, l2, l3];
+        chart.update('none'); // 使用 'none' 禁用动画，使滑动更加跟手
+    }
+
+    // 初始化
+    window.onload = () => {
+        initChart();
+        update();
+    };
+</script>
+
+</body>
+</html>

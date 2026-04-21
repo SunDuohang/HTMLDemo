@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BCE Loss 交互演示</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fira+Code:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: 'DM Sans', 'Helvetica Neue', sans-serif;
+    padding: 32px 20px;
+  }
+
+  .container { max-width: 640px; margin: 0 auto; }
+
+  h1 {
+    font-size: 26px; font-weight: 700; text-align: center;
+    font-family: 'Fira Code', monospace; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #E8572A, #6C5CE7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: #64748b; font-size: 13px; margin-top: 8px;
+    line-height: 1.6; text-align: center;
+  }
+  .subtitle code {
+    font-family: 'Fira Code', monospace; color: #94a3b8;
+    background: none; font-size: 13px;
+  }
+
+  /* Total Loss Card */
+  .total-card {
+    border-radius: 16px; padding: 20px 24px; margin-bottom: 28px;
+    text-align: center; transition: all 0.3s;
+    background: linear-gradient(135deg, rgba(232,87,42,0.1), rgba(108,92,231,0.05));
+    border: 1px solid rgba(71,85,105,0.3);
+  }
+  .total-card.optimal {
+    background: linear-gradient(135deg, rgba(42,157,143,0.15), rgba(42,157,143,0.05));
+    border-color: rgba(42,157,143,0.3);
+  }
+  .total-label {
+    font-size: 12px; color: #64748b; margin-bottom: 4px;
+    font-family: 'Fira Code', monospace;
+  }
+  .total-value {
+    font-size: 40px; font-weight: 700; font-family: 'Fira Code', monospace;
+    color: #e2e8f0; transition: color 0.3s;
+  }
+  .total-card.optimal .total-value { color: #2A9D8F; }
+  .optimal-hint {
+    margin-top: 8px; font-size: 13px; color: #2A9D8F;
+    font-weight: 600; letter-spacing: 0.5px; display: none;
+  }
+  .total-card.optimal .optimal-hint { display: block; }
+
+  /* Panel */
+  .panel {
+    background: rgba(30,41,59,0.5); border-radius: 16px;
+    padding: 24px 24px 12px; margin-bottom: 20px;
+    border: 1px solid rgba(71,85,105,0.2);
+  }
+  .panel-title {
+    font-size: 13px; color: #64748b; margin-bottom: 14px; font-weight: 600;
+  }
+
+  /* Slider row */
+  .slider-row { margin-bottom: 20px; }
+  .slider-header {
+    display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;
+  }
+  .slider-label {
+    font-family: 'Fira Code', monospace; font-size: 14px; color: #94a3b8;
+  }
+  .slider-value {
+    font-family: 'Fira Code', monospace; font-size: 22px; font-weight: 700;
+  }
+  .slider-track {
+    position: relative; height: 36px; display: flex; align-items: center;
+  }
+  .track-bg {
+    position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px;
+    background: #1e293b;
+  }
+  .track-fill {
+    position: absolute; left: 0; height: 6px; border-radius: 3px;
+    opacity: 0.4; transition: width 0.05s;
+  }
+  .target-marker {
+    position: absolute; transform: translateX(-50%);
+    width: 2px; height: 20px; border-radius: 1px; opacity: 0.6;
+  }
+  .target-label {
+    position: absolute; transform: translateX(-50%) translateY(-18px);
+    font-size: 10px; opacity: 0.7; font-family: 'Fira Code', monospace; white-space: nowrap;
+  }
+  input[type=range] {
+    position: relative; width: 100%; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    background: transparent; z-index: 2; height: 36px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #e2e8f0; border: 3px solid #334155;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #e2e8f0; border: 3px solid #334155;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  /* Buttons */
+  .btn-group {
+    display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .btn-group button {
+    flex: 1; min-width: 90px; padding: 10px 12px; border: none; border-radius: 10px;
+    font-weight: 600; font-size: 13px; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+  }
+
+  /* Loss bars */
+  .loss-bar { margin-bottom: 10px; }
+  .loss-bar-header {
+    display: flex; justify-content: space-between; margin-bottom: 4px;
+  }
+  .loss-bar-label {
+    font-size: 12px; color: #94a3b8; font-family: 'Fira Code', monospace;
+  }
+  .loss-bar-value {
+    font-size: 13px; font-weight: 600; font-family: 'Fira Code', monospace;
+  }
+  .loss-bar-track {
+    height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden;
+  }
+  .loss-bar-fill {
+    height: 100%; border-radius: 4px; transition: width 0.1s ease-out;
+  }
+
+  /* Curve rows */
+  .curve-row {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(15,23,42,0.6); border-radius: 10px; padding: 8px 12px;
+    margin-bottom: 12px;
+  }
+  .curve-label {
+    font-size: 12px; font-family: 'Fira Code', monospace;
+    min-width: 56px; font-weight: 600;
+  }
+  .curve-row svg { display: block; flex-shrink: 0; width: 100%; max-width: 280px; }
+
+  /* Formula */
+  .formula {
+    margin-top: 24px; padding: 16px 20px; border-radius: 12px;
+    background: rgba(30,41,59,0.3); border: 1px solid rgba(71,85,105,0.15);
+    font-family: 'Fira Code', monospace; font-size: 12px; color: #64748b;
+    line-height: 1.8; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div style="margin-bottom:32px;">
+    <h1>BCE Loss 交互演示</h1>
+    <p class="subtitle">
+      目标向量 <code>y = [0.5, 0.8, 0.2]</code><br>
+      拖动滑块调整 ŷ，观察 BCE Loss 的变化
+    </p>
+  </div>
+
+  <!-- Total Loss -->
+  <div class="total-card" id="totalCard">
+    <div class="total-label">Total BCE Loss</div>
+    <div class="total-value" id="totalValue">0.0000</div>
+    <div class="optimal-hint">✓ 最小值！ŷ ≈ y</div>
+  </div>
+
+  <!-- Sliders -->
+  <div class="panel" id="slidersPanel"></div>
+
+  <!-- Buttons -->
+  <div class="btn-group">
+    <button id="btnOptimal" style="background:#2A9D8F22;color:#2A9D8F;border:1px solid #2A9D8F44;"
+      onmouseenter="this.style.background='#2A9D8F44'" onmouseleave="this.style.background='#2A9D8F22'">
+      ŷ = y（最优）
+    </button>
+    <button id="btnRandom" style="background:#6C5CE722;color:#6C5CE7;border:1px solid #6C5CE744;"
+      onmouseenter="this.style.background='#6C5CE744'" onmouseleave="this.style.background='#6C5CE722'">
+      随机
+    </button>
+    <button id="btnWorst" style="background:#E8572A22;color:#E8572A;border:1px solid #E8572A44;"
+      onmouseenter="this.style.background='#E8572A44'" onmouseleave="this.style.background='#E8572A22'">
+      最差
+    </button>
+  </div>
+
+  <!-- Per-element loss bars -->
+  <div class="panel" style="padding:20px;">
+    <div class="panel-title">各元素损失分解</div>
+    <div id="lossBars"></div>
+  </div>
+
+  <!-- Curves -->
+  <div class="panel" style="padding:20px;">
+    <div class="panel-title">各元素 BCE 曲线（圆点 = 当前 ŷ，虚线 = 目标 y）</div>
+    <div id="curves"></div>
+  </div>
+
+  <!-- Formula -->
+  <div class="formula">
+    BCE = -1/N × Σ [ yᵢ·log(ŷᵢ) + (1-yᵢ)·log(1-ŷᵢ) ]
+  </div>
+</div>
+
+<script>
+const FIXED_Y = [0.5, 0.8, 0.2];
+const COLORS = ['#E8572A', '#2A9D8F', '#6C5CE7'];
+const EPS = 1e-7;
+let yHat = [0.5, 0.5, 0.5];
+
+function bceSingle(y, p) {
+  p = Math.max(EPS, Math.min(1 - EPS, p));
+  return -(y * Math.log(p) + (1 - y) * Math.log(1 - p));
+}
+function bceTotal(yArr, pArr) {
+  let s = 0;
+  for (let i = 0; i < yArr.length; i++) s += bceSingle(yArr[i], pArr[i]);
+  return s / yArr.length;
+}
+
+// Build sliders
+const slidersPanel = document.getElementById('slidersPanel');
+FIXED_Y.forEach((yVal, i) => {
+  const c = COLORS[i];
+  const html = `
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-label">ŷ<sub>${i+1}</sub></span>
+        <span class="slider-value" id="sv${i}" style="color:${c}">${yHat[i].toFixed(2)}</span>
+      </div>
+      <div class="slider-track">
+        <div class="track-bg"></div>
+        <div class="track-fill" id="tf${i}" style="background:${c};width:${yHat[i]*100}%"></div>
+        <div class="target-marker" style="left:${yVal*100}%;background:${c}"></div>
+        <div class="target-label" style="left:${yVal*100}%;color:${c}">y${i+1}=${yVal}</div>
+        <input type="range" min="0" max="1" step="0.01" value="${yHat[i]}"
+          oninput="updateSlider(${i}, this.value)">
+      </div>
+    </div>`;
+  slidersPanel.insertAdjacentHTML('beforeend', html);
+});
+
+// Build loss bars
+function renderLossBars() {
+  const container = document.getElementById('lossBars');
+  let html = '';
+  FIXED_Y.forEach((y, i) => {
+    const loss = bceSingle(y, yHat[i]);
+    const w = Math.min((loss / 5) * 100, 100);
+    html += `
+      <div class="loss-bar">
+        <div class="loss-bar-header">
+          <span class="loss-bar-label">BCE(${y}, ${yHat[i].toFixed(2)})</span>
+          <span class="loss-bar-value" style="color:${COLORS[i]}">${loss.toFixed(4)}</span>
+        </div>
+        <div class="loss-bar-track">
+          <div class="loss-bar-fill" style="width:${w}%;background:${COLORS[i]}"></div>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// Build curve SVGs
+function buildCurveSVG(yFixed, yHatVal, color) {
+  const W = 280, H = 140;
+  const pad = { t: 10, r: 10, b: 28, l: 36 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const maxLoss = 5;
+  const toX = v => pad.l + v * iw;
+  const toY = v => pad.t + ih - (Math.min(v, maxLoss) / maxLoss) * ih;
+
+  let pathD = '';
+  for (let j = 0; j <= 200; j++) {
+    const x = j / 200;
+    const loss = bceSingle(yFixed, x);
+    pathD += `${j === 0 ? 'M' : 'L'}${toX(x).toFixed(1)},${toY(loss).toFixed(1)} `;
+  }
+
+  const curLoss = bceSingle(yFixed, yHatVal);
+
+  // Grid lines
+  let grid = '';
+  for (let v = 0; v <= 5; v++) {
+    grid += `<line x1="${pad.l}" x2="${W-pad.r}" y1="${toY(v)}" y2="${toY(v)}" stroke="#1e293b" stroke-width="1"/>`;
+    grid += `<text x="${pad.l-4}" y="${toY(v)+3}" text-anchor="end" fill="#475569" font-size="9" font-family="'Fira Code',monospace">${v}</text>`;
+  }
+  [0, 0.25, 0.5, 0.75, 1].forEach(v => {
+    grid += `<text x="${toX(v)}" y="${H-4}" text-anchor="middle" fill="#475569" font-size="9" font-family="'Fira Code',monospace">${v}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    ${grid}
+    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" opacity="0.8"/>
+    <line x1="${toX(yHatVal)}" y1="${toY(0)}" x2="${toX(yHatVal)}" y2="${toY(Math.min(curLoss,maxLoss))}"
+      stroke="${color}" stroke-width="1" stroke-dasharray="3,3" opacity="0.5"/>
+    <circle cx="${toX(yHatVal)}" cy="${toY(Math.min(curLoss,maxLoss))}" r="5"
+      fill="${color}" stroke="#0f172a" stroke-width="2"/>
+    <line x1="${toX(yFixed)}" y1="${pad.t}" x2="${toX(yFixed)}" y2="${H-pad.b}"
+      stroke="${color}" stroke-width="1" opacity="0.3" stroke-dasharray="2,4"/>
+  </svg>`;
+}
+
+function renderCurves() {
+  const container = document.getElementById('curves');
+  let html = '';
+  FIXED_Y.forEach((y, i) => {
+    html += `
+      <div class="curve-row">
+        <div class="curve-label" style="color:${COLORS[i]}">y${'\u2081\u2082\u2083'[i]}=${y}</div>
+        ${buildCurveSVG(y, yHat[i], COLORS[i])}
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function updateAll() {
+  const total = bceTotal(FIXED_Y, yHat);
+  const isOpt = FIXED_Y.every((y, i) => Math.abs(y - yHat[i]) < 0.02);
+
+  document.getElementById('totalValue').textContent = total.toFixed(4);
+  const card = document.getElementById('totalCard');
+  card.classList.toggle('optimal', isOpt);
+
+  FIXED_Y.forEach((_, i) => {
+    document.getElementById(`sv${i}`).textContent = yHat[i].toFixed(2);
+    document.getElementById(`tf${i}`).style.width = `${yHat[i]*100}%`;
+  });
+
+  renderLossBars();
+  renderCurves();
+}
+
+function updateSlider(i, val) {
+  yHat[i] = parseFloat(val);
+  updateAll();
+}
+
+function setYHat(arr) {
+  yHat = arr.slice();
+  // Also update slider input elements
+  document.querySelectorAll('#slidersPanel input[type=range]').forEach((el, i) => {
+    el.value = yHat[i];
+  });
+  updateAll();
+}
+
+document.getElementById('btnOptimal').onclick = () => setYHat([...FIXED_Y]);
+document.getElementById('btnRandom').onclick = () => setYHat([Math.random(), Math.random(), Math.random()]);
+document.getElementById('btnWorst').onclick = () => setYHat(FIXED_Y.map(y => y > 0.5 ? 0.01 : 0.99));
+
+// Initial render
+updateAll();
+</script>
+</body>
+</html>
