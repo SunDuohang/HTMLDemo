@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>损失函数对比：MSE vs BCE</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bce-color: #ef4444; /* 红色代表 BCE，强调其剧烈的惩罚 */
+            --mse-color: #3b82f6; /* 蓝色代表 MSE，显得相对平缓 */
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 1.5rem;
+            color: #0f172a;
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+
+        .control-panel {
+            background: #f1f5f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        label {
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+            cursor: pointer;
+        }
+
+        .val-display {
+            font-weight: bold;
+            color: #0f172a;
+            width: 50px;
+            text-align: right;
+        }
+
+        .math-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .math-card {
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+
+        .math-card.mse { border-left: 5px solid var(--mse-color); }
+        .math-card.bce { border-left: 5px solid var(--bce-color); }
+
+        .highlight-bce { color: #fca5a5; font-weight: bold; font-size: 1.3rem;}
+        .highlight-mse { color: #93c5fd; font-weight: bold; font-size: 1.3rem;}
+
+        .chart-container {
+            position: relative;
+            height: 450px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>损失函数梯度惩罚对比</h1>
+    <p class="subtitle">设定真实标签 <strong>y = 1</strong>，观察预测概率 ŷ 变化时的损失值增长趋势</p>
+
+    <div class="control-panel">
+        <div class="slider-group">
+            <label>模型预测概率 (ŷ):</label>
+            <input type="range" id="y-hat" min="0.01" max="0.99" step="0.01" value="0.5" oninput="update()">
+            <div class="val-display" id="y-hat-val">0.50</div>
+        </div>
+        <p style="font-size: 0.85rem; color: #64748b; margin: 5px 0 0 0; text-align: center;">
+            尝试将 ŷ 向左滑动（模拟模型犯下“离谱且自信”的错误），观察两条曲线的差异。
+        </p>
+    </div>
+
+    <div class="math-grid">
+        <div class="math-card mse">
+            <div style="color: var(--mse-color); font-weight: bold; margin-bottom: 8px;">均方误差 (MSE Loss)</div>
+            L = (ŷ - 1)² <br>
+            L = (<span id="mse-calc">0.50</span> - 1)² <br>
+            = <span class="highlight-mse" id="mse-result">0.250</span>
+        </div>
+        <div class="math-card bce">
+            <div style="color: var(--bce-color); font-weight: bold; margin-bottom: 8px;">二元交叉熵 (BCE Loss)</div>
+            L = -ln(ŷ) <br>
+            L = -ln(<span id="bce-calc">0.50</span>) <br>
+            = <span class="highlight-bce" id="bce-result">0.693</span>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="lossChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let chart;
+
+    function initChart() {
+        const ctx = document.getElementById('lossChart').getContext('2d');
+        
+        const labels = [];
+        const dataMSE = [];
+        const dataBCE = [];
+        
+        // 生成 0.01 到 1.0 的数据点
+        for (let i = 0.01; i <= 1.0; i += 0.01) {
+            labels.push(i.toFixed(2));
+            dataMSE.push(Math.pow(i - 1, 2));
+            dataBCE.push(-Math.log(i));
+        }
+
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'MSE Loss = (ŷ - 1)²',
+                        data: dataMSE,
+                        borderColor: '#3b82f6', // Blue
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'BCE Loss = -ln(ŷ)',
+                        data: dataBCE,
+                        borderColor: '#ef4444', // Red
+                        backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: '当前 MSE 点',
+                        data: [],
+                        backgroundColor: '#1d4ed8',
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
+                        showLine: false
+                    },
+                    {
+                        label: '当前 BCE 点',
+                        data: [],
+                        backgroundColor: '#b91c1c',
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
+                        showLine: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: '模型预测概率 (ŷ)', font: { size: 14, weight: 'bold' } },
+                        grid: { color: '#f1f5f9' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Loss 惩罚值', font: { size: 14, weight: 'bold' } },
+                        min: 0,
+                        max: 5, // 截断Y轴以更好地展示MSE，否则会被BCE的无穷大压缩成一条直线
+                        grid: { color: '#e2e8f0' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 13 } }
+                    },
+                    tooltip: { enabled: false } // 禁用默认 tooltip，依靠页面直接显示数值
+                }
+            }
+        });
+    }
+
+    function update() {
+        const yHat = parseFloat(document.getElementById('y-hat').value);
+        
+        // 更新 UI 文本
+        document.getElementById('y-hat-val').innerText = yHat.toFixed(2);
+        document.getElementById('mse-calc').innerText = yHat.toFixed(2);
+        document.getElementById('bce-calc').innerText = yHat.toFixed(2);
+
+        // 计算结果
+        const mse = Math.pow(yHat - 1, 2);
+        const bce = -Math.log(yHat);
+
+        document.getElementById('mse-result').innerText = mse.toFixed(3);
+        document.getElementById('bce-result').innerText = bce.toFixed(3);
+
+        // 更新图表上的动态点
+        const pointDataMSE = new Array(chart.data.labels.length).fill(null);
+        const pointDataBCE = new Array(chart.data.labels.length).fill(null);
+        
+        const index = Math.round(yHat * 100) - 1;
+        
+        if (index >= 0 && index < pointDataMSE.length) {
+            pointDataMSE[index] = mse;
+            pointDataBCE[index] = bce;
+        }
+
+        chart.data.datasets[2].data = pointDataMSE;
+        chart.data.datasets[3].data = pointDataBCE;
+        
+        chart.update('none'); // 禁用动画以实现流畅滑动
+    }
+
+    window.onload = () => {
+        initChart();
+        update();
+    };
+</script>
+
+</body>
+</html>
