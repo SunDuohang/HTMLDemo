@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>单音干扰信号可视化</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #07090d;
+    --surface: #0e1218;
+    --surface2: #141a24;
+    --border: #1c2433;
+    --text: #cdd6e4;
+    --text-dim: #5a6a82;
+    --amber: #f0b429;
+    --amber-dim: rgba(240,180,41,0.15);
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.12);
+    --red: #fb7185;
+    --grid: rgba(90,106,130,0.07);
+    --scanline: rgba(255,255,255,0.015);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* Subtle CRT scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      var(--scanline) 2px,
+      var(--scanline) 4px
+    );
+    z-index: 9999;
+  }
+
+  .header {
+    text-align: center;
+    padding: 44px 24px 20px;
+    position: relative;
+  }
+
+  .header h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--amber);
+    text-shadow: 0 0 20px rgba(240,180,41,0.3);
+    margin-bottom: 6px;
+  }
+
+  .header p {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 300;
+    letter-spacing: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .formula-strip {
+    max-width: 880px;
+    margin: 24px auto 20px;
+    padding: 0 20px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .formula-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .formula-chip .tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  .formula-chip .tag.time {
+    background: var(--amber-dim);
+    color: var(--amber);
+  }
+
+  .formula-chip .tag.freq {
+    background: var(--green-dim);
+    color: var(--green);
+  }
+
+  .controls {
+    max-width: 880px;
+    margin: 0 auto 24px;
+    padding: 0 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .ctrl {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    min-width: 170px;
+  }
+
+  .ctrl label {
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .ctrl .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ctrl input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+  }
+
+  .ctrl input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--amber);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(240,180,41,0.5);
+  }
+
+  .ctrl .val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--amber);
+    min-width: 60px;
+    text-align: right;
+  }
+
+  .plots {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 0 20px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .plot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .plot-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 10%, var(--amber-dim) 50%, transparent 90%);
+  }
+
+  .plot-head {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px 8px;
+    gap: 8px;
+  }
+
+  .plot-head .indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: blink 2.5s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .plot-head .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+
+  .plot-head .info {
+    margin-left: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  canvas { display: block; width: 100%; }
+
+  .note {
+    max-width: 880px;
+    margin: -8px auto 28px;
+    padding: 0 20px;
+  }
+
+  .note-inner {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-dim);
+  }
+
+  .note-inner strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .note-inner .hl {
+    color: var(--amber);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>SINGLE-TONE JAMMING</h1>
+  <p>单音干扰信号 · 时域 · 频域 · 时频分析</p>
+</div>
+
+<div class="formula-strip">
+  <div class="formula-chip">
+    <span class="tag time">时域</span>
+    J(t) = A · cos(2πf<sub>e</sub>t + φ)
+  </div>
+  <div class="formula-chip">
+    <span class="tag freq">频域</span>
+    J(f) = (A/2)·δ(f − f<sub>e</sub>) + (A/2)·δ(f + f<sub>e</sub>)
+  </div>
+</div>
+
+<div class="controls">
+  <div class="ctrl">
+    <label>A 幅度</label>
+    <div class="row">
+      <input type="range" id="amp" min="0.2" max="2" value="1" step="0.1">
+      <span class="val" id="amp_val">1.0</span>
+    </div>
+  </div>
+  <div class="ctrl">
+    <label>f<sub>e</sub> 干扰频率</label>
+    <div class="row">
+      <input type="range" id="fe" min="10" max="200" value="60" step="5">
+      <span class="val" id="fe_val">60 Hz</span>
+    </div>
+  </div>
+  <div class="ctrl">
+    <label>φ 初始相位</label>
+    <div class="row">
+      <input type="range" id="phi" min="0" max="6.28" value="0" step="0.1">
+      <span class="val" id="phi_val">0 rad</span>
+    </div>
+  </div>
+  <div class="ctrl">
+    <label>T 显示时长</label>
+    <div class="row">
+      <input type="range" id="dur" min="0.05" max="1" value="0.3" step="0.05">
+      <span class="val" id="dur_val">0.30 s</span>
+    </div>
+  </div>
+</div>
+
+<div class="plots">
+  <!-- Time Domain -->
+  <div class="plot-card">
+    <div class="plot-head">
+      <span class="indicator" style="background:var(--amber)"></span>
+      <span class="label" style="color:var(--amber)">时域波形 TIME DOMAIN</span>
+      <span class="info">Re{J(t)} = A·cos(2πf<sub>e</sub>t + φ)</span>
+    </div>
+    <canvas id="cTime" height="260"></canvas>
+  </div>
+
+  <!-- Frequency Domain -->
+  <div class="plot-card">
+    <div class="plot-head">
+      <span class="indicator" style="background:var(--green)"></span>
+      <span class="label" style="color:var(--green)">幅度谱 AMPLITUDE SPECTRUM</span>
+      <span class="info">|J(f)| — 单边冲激谱线</span>
+    </div>
+    <canvas id="cFreq" height="260"></canvas>
+  </div>
+
+  <!-- Spectrogram -->
+  <div class="plot-card">
+    <div class="plot-head">
+      <span class="indicator" style="background:var(--red)"></span>
+      <span class="label" style="color:var(--red)">时频图 SPECTROGRAM</span>
+      <span class="info">STFT — 恒定频率水平亮线</span>
+    </div>
+    <canvas id="cSpec" height="260"></canvas>
+  </div>
+</div>
+
+<div class="note">
+  <div class="note-inner">
+    <strong>观察要点：</strong>
+    时域中振荡周期恒定（<span class="hl">频率不变</span>），包络为常数 A（<span class="hl">振幅恒定</span>）。
+    幅度谱中仅在 <span class="hl">f = f<sub>e</sub></span> 处出现单根谱线。
+    时频图中呈现一条<span class="hl">水平亮线</span>，说明频率在整个时间范围内始终不变——这是单音干扰区别于扫频干扰（斜线）的最直观特征。
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const C = {
+  amber: '#f0b429',
+  amberGlow: 'rgba(240,180,41,0.35)',
+  green: '#34d399',
+  greenGlow: 'rgba(52,211,153,0.25)',
+  red: '#fb7185',
+  grid: 'rgba(90,106,130,0.08)',
+  axis: 'rgba(90,106,130,0.25)',
+  label: '#5a6a82',
+  bg: '#0e1218',
+};
+
+function getParams() {
+  const A = +$('amp').value;
+  const fe = +$('fe').value;
+  const phi = +$('phi').value;
+  const dur = +$('dur').value;
+  $('amp_val').textContent = A.toFixed(1);
+  $('fe_val').textContent = fe + ' Hz';
+  $('phi_val').textContent = phi.toFixed(1) + ' rad';
+  $('dur_val').textContent = dur.toFixed(2) + ' s';
+  return { A, fe, phi, dur };
+}
+
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function niceStep(range, n) {
+  const rough = range / n;
+  const p = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / p;
+  return (norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10) * p;
+}
+
+function makeTicks(min, max, n) {
+  const step = niceStep(max - min, n);
+  const start = Math.ceil(min / step) * step;
+  const ticks = [], labels = [];
+  for (let v = start; v <= max + step * 0.001; v += step) {
+    ticks.push(v);
+    labels.push(Math.abs(v) < 1e-9 ? '0' : Number.isInteger(v) ? v.toString() : v.toFixed(2));
+  }
+  return { ticks, labels };
+}
+
+function drawGridAndAxes(ctx, pad, pw, ph, xRange, yRange, xLabel, yLabel, xTickN, yTickN) {
+  const [xMin, xMax] = xRange;
+  const [yMin, yMax] = yRange;
+  const xT = makeTicks(xMin, xMax, xTickN || 6);
+  const yT = makeTicks(yMin, yMax, yTickN || 4);
+
+  const toX = v => pad.l + (v - xMin) / (xMax - xMin) * pw;
+  const toY = v => pad.t + ph - (v - yMin) / (yMax - yMin) * ph;
+
+  // Grid
+  ctx.strokeStyle = C.grid;
+  ctx.lineWidth = 1;
+  xT.ticks.forEach(v => {
+    ctx.beginPath(); ctx.moveTo(toX(v), pad.t); ctx.lineTo(toX(v), pad.t + ph); ctx.stroke();
+  });
+  yT.ticks.forEach(v => {
+    ctx.beginPath(); ctx.moveTo(pad.l, toY(v)); ctx.lineTo(pad.l + pw, toY(v)); ctx.stroke();
+  });
+
+  // Border
+  ctx.strokeStyle = C.axis;
+  ctx.strokeRect(pad.l, pad.t, pw, ph);
+
+  // Tick labels
+  ctx.fillStyle = C.label;
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'center';
+  xT.ticks.forEach((v, i) => ctx.fillText(xT.labels[i], toX(v), pad.t + ph + 15));
+  ctx.textAlign = 'right';
+  yT.ticks.forEach((v, i) => ctx.fillText(yT.labels[i], pad.l - 6, toY(v) + 3));
+
+  // Axis labels
+  ctx.fillStyle = '#7a8a9e';
+  ctx.font = '11px "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(xLabel, pad.l + pw / 2, pad.t + ph + 32);
+  ctx.save();
+  ctx.translate(pad.l - 42, pad.t + ph / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+
+  return { toX, toY };
+}
+
+// ===================== DRAWING =====================
+
+function drawTimeDomain(params) {
+  const { A, fe, phi, dur } = params;
+  const canvas = $('cTime');
+  const { ctx, w, h } = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 56, r: 20, t: 10, b: 40 };
+  const pw = w - pad.l - pad.r;
+  const ph = h - pad.t - pad.b;
+
+  const yLim = Math.max(A * 1.25, 0.5);
+  const { toX, toY } = drawGridAndAxes(ctx, pad, pw, ph, [0, dur], [-yLim, yLim], '时间 t (s)', '幅度', 6, 4);
+
+  // Envelope lines
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = 'rgba(240,180,41,0.2)';
+  ctx.lineWidth = 1;
+  [A, -A].forEach(env => {
+    ctx.beginPath(); ctx.moveTo(toX(0), toY(env)); ctx.lineTo(toX(dur), toY(env)); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Envelope label
+  ctx.fillStyle = 'rgba(240,180,41,0.4)';
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('A = ' + A.toFixed(1), toX(dur) - 52, toY(A) - 5);
+
+  // Signal
+  const fs = Math.max(2000, fe * 12);
+  const N = Math.floor(dur * fs);
+  ctx.strokeStyle = C.amber;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = C.amberGlow;
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const t = (i / N) * dur;
+    const v = A * Math.cos(2 * Math.PI * fe * t + phi);
+    const x = toX(t), y = toY(v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawFreqDomain(params) {
+  const { A, fe } = params;
+  const canvas = $('cFreq');
+  const { ctx, w, h } = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 56, r: 20, t: 10, b: 40 };
+  const pw = w - pad.l - pad.r;
+  const ph = h - pad.t - pad.b;
+
+  const fMax = Math.max(fe * 2.2, 80);
+  const ampMax = A * 1.3;
+  const { toX, toY } = drawGridAndAxes(ctx, pad, pw, ph, [0, fMax], [0, ampMax], '频率 f (Hz)', '幅度', 6, 4);
+
+  // Noise floor
+  ctx.strokeStyle = 'rgba(52,211,153,0.08)';
+  ctx.lineWidth = 1;
+  const noiseY = toY(0);
+  ctx.beginPath(); ctx.moveTo(pad.l, noiseY); ctx.lineTo(pad.l + pw, noiseY); ctx.stroke();
+
+  // Simulated faint noise floor texture
+  ctx.fillStyle = 'rgba(52,211,153,0.06)';
+  for (let i = 0; i < pw; i += 2) {
+    const nh = Math.random() * ampMax * 0.04;
+    const nx = pad.l + i;
+    const ny = toY(nh);
+    ctx.fillRect(nx, ny, 1.5, noiseY - ny);
+  }
+
+  // Spectral line at fe
+  const xFe = toX(fe);
+  const yTop = toY(A);
+
+  // Glow effect
+  const grad = ctx.createLinearGradient(xFe, yTop, xFe, noiseY);
+  grad.addColorStop(0, 'rgba(52,211,153,0.5)');
+  grad.addColorStop(1, 'rgba(52,211,153,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(xFe - 4, yTop, 8, noiseY - yTop);
+
+  // Main spike
+  ctx.strokeStyle = C.green;
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = C.greenGlow;
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(xFe, noiseY);
+  ctx.lineTo(xFe, yTop);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Peak dot
+  ctx.fillStyle = C.green;
+  ctx.beginPath();
+  ctx.arc(xFe, yTop, 3.5, 0, 2 * Math.PI);
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = C.green;
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('f_e = ' + fe + ' Hz', xFe, yTop - 10);
+  ctx.fillStyle = 'rgba(52,211,153,0.5)';
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.fillText('A = ' + A.toFixed(1), xFe, yTop - 24);
+}
+
+function drawSpectrogram(params) {
+  const { A, fe, phi, dur } = params;
+  const canvas = $('cSpec');
+  const { ctx, w, h } = setupCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 56, r: 20, t: 10, b: 40 };
+  const pw = w - pad.l - pad.r;
+  const ph = h - pad.t - pad.b;
+
+  const fMax = Math.max(fe * 2.5, 100);
+  const { toX, toY } = drawGridAndAxes(ctx, pad, pw, ph, [0, dur], [0, fMax], '时间 t (s)', '频率 f (Hz)', 6, 5);
+
+  // Compute STFT spectrogram
+  const fs = Math.max(1024, fe * 8);
+  const totalSamples = Math.floor(dur * fs);
+  const winLen = Math.min(256, Math.floor(totalSamples / 4));
+  const hopSize = Math.max(1, Math.floor(winLen / 4));
+  const nfft = 512;
+
+  // Generate signal samples
+  const signal = new Float32Array(totalSamples);
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / fs;
+    signal[i] = A * Math.cos(2 * Math.PI * fe * t + phi);
+  }
+
+  // Hann window
+  const win = new Float32Array(winLen);
+  for (let i = 0; i < winLen; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (winLen - 1)));
+
+  // STFT
+  const numFrames = Math.floor((totalSamples - winLen) / hopSize) + 1;
+  const numBins = Math.floor(nfft / 2) + 1;
+  const specData = [];
+
+  for (let f = 0; f < numFrames; f++) {
+    const start = f * hopSize;
+    const re = new Float32Array(nfft);
+    const im = new Float32Array(nfft);
+    for (let i = 0; i < winLen; i++) {
+      re[i] = signal[start + i] * win[i];
+    }
+    // DFT (only compute needed bins for performance)
+    const mag = new Float32Array(numBins);
+    for (let k = 0; k < numBins; k++) {
+      const freqK = k * fs / nfft;
+      if (freqK > fMax * 1.1) { break; }
+      let sumRe = 0, sumIm = 0;
+      for (let n = 0; n < nfft; n++) {
+        const angle = -2 * Math.PI * k * n / nfft;
+        sumRe += re[n] * Math.cos(angle);
+        sumIm += re[n] * Math.sin(angle);
+      }
+      mag[k] = Math.sqrt(sumRe * sumRe + sumIm * sumIm) / nfft;
+    }
+    specData.push(mag);
+  }
+
+  // Find max magnitude for normalization
+  let maxMag = 0;
+  for (const frame of specData) {
+    for (const v of frame) if (v > maxMag) maxMag = v;
+  }
+  if (maxMag === 0) maxMag = 1;
+
+  // Render spectrogram as colored rectangles
+  const colW = pw / numFrames;
+  const freqPerBin = fs / nfft;
+
+  for (let f = 0; f < numFrames; f++) {
+    const x = pad.l + (f / numFrames) * pw;
+    for (let k = 0; k < numBins; k++) {
+      const freq = k * freqPerBin;
+      if (freq > fMax) break;
+      const intensity = specData[f][k] / maxMag;
+      if (intensity < 0.02) continue;
+
+      const y1 = toY(freq + freqPerBin / 2);
+      const y2 = toY(Math.max(0, freq - freqPerBin / 2));
+      const binH = y2 - y1;
+
+      // Warm colormap: black -> deep red -> orange -> amber -> white
+      let r, g, b;
+      const v = Math.pow(intensity, 0.6); // gamma for better contrast
+      if (v < 0.33) {
+        const t = v / 0.33;
+        r = Math.floor(180 * t); g = 0; b = Math.floor(30 * t);
+      } else if (v < 0.66) {
+        const t = (v - 0.33) / 0.33;
+        r = 180 + Math.floor(60 * t); g = Math.floor(120 * t); b = 30 - Math.floor(30 * t);
+      } else {
+        const t = (v - 0.66) / 0.34;
+        r = 240 + Math.floor(15 * t); g = 120 + Math.floor(100 * t); b = Math.floor(80 * t);
+      }
+
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, y1, colW + 1, binH + 1);
+    }
+  }
+
+  // Frequency marker line
+  ctx.setLineDash([3, 6]);
+  ctx.strokeStyle = 'rgba(251,113,133,0.5)';
+  ctx.lineWidth = 1;
+  const yFe = toY(fe);
+  ctx.beginPath(); ctx.moveTo(pad.l, yFe); ctx.lineTo(pad.l + pw, yFe); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Label
+  ctx.fillStyle = C.red;
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('f_e = ' + fe + ' Hz', pad.l + pw + 4, yFe + 3);
+
+  // Re-draw axis border on top
+  ctx.strokeStyle = C.axis;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.l, pad.t, pw, ph);
+}
+
+function drawAll() {
+  const params = getParams();
+  drawTimeDomain(params);
+  drawFreqDomain(params);
+  drawSpectrogram(params);
+}
+
+['amp', 'fe', 'phi', 'dur'].forEach(id => $(id).addEventListener('input', drawAll));
+window.addEventListener('resize', drawAll);
+drawAll();
+</script>
+</body>
+</html>
