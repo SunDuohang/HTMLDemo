@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扫频干扰信号可视化</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --accent-up: #22d3ee;
+    --accent-saw: #a78bfa;
+    --accent-tri: #f472b6;
+    --grid: rgba(148, 163, 184, 0.06);
+    --grid-strong: rgba(148, 163, 184, 0.12);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center;
+    padding: 48px 24px 16px;
+    position: relative;
+  }
+
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent-up), transparent);
+  }
+
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    background: linear-gradient(135deg, var(--accent-up), var(--accent-saw), var(--accent-tri));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+
+  .header p {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 300;
+    letter-spacing: 1px;
+  }
+
+  .controls {
+    max-width: 900px;
+    margin: 32px auto 24px;
+    padding: 0 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+  }
+
+  .param-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 160px;
+  }
+
+  .param-group label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .param-group .value-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .param-group input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+  }
+
+  .param-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-up);
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+  }
+
+  .param-group .val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-up);
+    min-width: 55px;
+    text-align: right;
+  }
+
+  .canvas-section {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .plot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .plot-card .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px 10px;
+  }
+
+  .card-header .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .card-header .title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+
+  .card-header .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+  }
+
+  .legend {
+    max-width: 900px;
+    margin: -8px auto 24px;
+    padding: 0 24px;
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .legend-item .swatch {
+    width: 20px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  .formula-bar {
+    max-width: 900px;
+    margin: 0 auto 28px;
+    padding: 0 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .formula-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    border-left: 3px solid;
+  }
+
+  .formula-card h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .formula-card .math {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .formula-card.up { border-left-color: var(--accent-up); }
+  .formula-card.up h3 { color: var(--accent-up); }
+  .formula-card.saw { border-left-color: var(--accent-saw); }
+  .formula-card.saw h3 { color: var(--accent-saw); }
+  .formula-card.tri { border-left-color: var(--accent-tri); }
+  .formula-card.tri h3 { color: var(--accent-tri); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>SWEEP JAMMING</h1>
+  <p>扫频干扰信号 · 时域 & 时频可视化</p>
+</div>
+
+<div class="formula-bar">
+  <div class="formula-card up">
+    <h3>上扫频 Up-Chirp</h3>
+    <div class="math">f(t) = f_L + k·t<br>频率单调递增，k &gt; 0<br>单周期，无跳变</div>
+  </div>
+  <div class="formula-card saw">
+    <h3>锯齿波扫频 Sawtooth</h3>
+    <div class="math">f(t') = f_L + k·t'<br>t' = t mod T_sweep<br>周期末尾频率瞬间跳回 f_L</div>
+  </div>
+  <div class="formula-card tri">
+    <h3>三角波扫频 Triangular</h3>
+    <div class="math">上半周期：f_L → f_H<br>下半周期：f_H → f_L<br>无频率跳变，相位连续</div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="param-group">
+    <label>f_L 起始频率</label>
+    <div class="value-row">
+      <input type="range" id="fL" min="5" max="40" value="10" step="1">
+      <span class="val" id="fL_val">10 Hz</span>
+    </div>
+  </div>
+  <div class="param-group">
+    <label>f_H 截止频率</label>
+    <div class="value-row">
+      <input type="range" id="fH" min="60" max="200" value="100" step="5">
+      <span class="val" id="fH_val">100 Hz</span>
+    </div>
+  </div>
+  <div class="param-group">
+    <label>T_sweep 扫频周期</label>
+    <div class="value-row">
+      <input type="range" id="Tsw" min="0.2" max="2" value="1" step="0.1">
+      <span class="val" id="Tsw_val">1.0 s</span>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="swatch" style="background:var(--accent-up)"></span>上扫频 Up-Chirp</div>
+  <div class="legend-item"><span class="swatch" style="background:var(--accent-saw)"></span>锯齿波 Sawtooth</div>
+  <div class="legend-item"><span class="swatch" style="background:var(--accent-tri)"></span>三角波 Triangular</div>
+</div>
+
+<div class="canvas-section">
+  <div class="plot-card">
+    <div class="card-header">
+      <span class="dot" style="background:var(--accent-up)"></span>
+      <span class="title">时域波形 TIME DOMAIN</span>
+      <span class="subtitle">Re{J(t)}</span>
+    </div>
+    <canvas id="timeDomain" height="420"></canvas>
+  </div>
+
+  <div class="plot-card">
+    <div class="card-header">
+      <span class="dot" style="background:var(--accent-saw)"></span>
+      <span class="title">瞬时频率 INSTANTANEOUS FREQ</span>
+      <span class="subtitle">f(t) = (1/2π)·dθ/dt</span>
+    </div>
+    <canvas id="freqPlot" height="340"></canvas>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const COLORS = {
+  up:  '#22d3ee',
+  saw: '#a78bfa',
+  tri: '#f472b6',
+  grid: 'rgba(148,163,184,0.08)',
+  gridStrong: 'rgba(148,163,184,0.15)',
+  axis: 'rgba(148,163,184,0.3)',
+  text: '#64748b',
+};
+
+function getParams() {
+  const fL = +$('fL').value;
+  const fH = +$('fH').value;
+  const Tsw = +$('Tsw').value;
+  $('fL_val').textContent = fL + ' Hz';
+  $('fH_val').textContent = fH + ' Hz';
+  $('Tsw_val').textContent = Tsw.toFixed(1) + ' s';
+  return { fL, fH, Tsw, B: fH - fL };
+}
+
+function generateSignals(params) {
+  const { fL, fH, Tsw, B } = params;
+  const k = B / Tsw;
+  const totalT = 2.5 * Tsw;
+  const fs = Math.max(800, fH * 6);
+  const N = Math.floor(totalT * fs);
+  const dt = 1 / fs;
+
+  const up = { re: new Float32Array(N), freq: new Float32Array(N) };
+  const saw = { re: new Float32Array(N), freq: new Float32Array(N) };
+  const tri = { re: new Float32Array(N), freq: new Float32Array(N) };
+  const time = new Float32Array(N);
+
+  for (let i = 0; i < N; i++) {
+    const t = i * dt;
+    time[i] = t;
+
+    // Up-chirp (single, non-periodic)
+    const fUp = fL + k * t;
+    const phaseUp = 2 * Math.PI * (fL * t + 0.5 * k * t * t);
+    up.re[i] = Math.cos(phaseUp);
+    up.freq[i] = fUp;
+
+    // Sawtooth (periodic)
+    const tSaw = t % Tsw;
+    const fSaw = fL + k * tSaw;
+    const phaseSaw = 2 * Math.PI * (fL * tSaw + 0.5 * k * tSaw * tSaw);
+    saw.re[i] = Math.cos(phaseSaw);
+    saw.freq[i] = fSaw;
+
+    // Triangular (periodic)
+    const tTri = t % Tsw;
+    const half = Tsw / 2;
+    let fTri, phaseTri;
+    if (tTri < half) {
+      fTri = fL + (B / half) * tTri;
+      phaseTri = 2 * Math.PI * (fL * tTri + 0.5 * (B / half) * tTri * tTri);
+    } else {
+      const t2 = tTri - half;
+      fTri = fH - (B / half) * t2;
+      // phase continues from peak: fH*t2 - 0.5*(B/half)*t2^2, plus phase at half
+      const phaseAtHalf = fL * half + 0.5 * (B / half) * half * half;
+      phaseTri = 2 * Math.PI * (phaseAtHalf + fH * t2 - 0.5 * (B / half) * t2 * t2);
+    }
+    tri.re[i] = Math.cos(phaseTri);
+    tri.freq[i] = fTri;
+  }
+
+  return { up, saw, tri, time, N, totalT, fs };
+}
+
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function drawGrid(ctx, x0, y0, w, h, xTicks, yTicks, xLabels, yLabels, xAxisLabel, yAxisLabel) {
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < xTicks.length; i++) {
+    const x = x0 + (xTicks[i] / xTicks[xTicks.length - 1]) * w;
+    ctx.beginPath();
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x, y0 + h);
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < yTicks.length; i++) {
+    const y = y0 + h - (yTicks[i] - yTicks[0]) / (yTicks[yTicks.length - 1] - yTicks[0]) * h;
+    ctx.beginPath();
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x0 + w, y);
+    ctx.stroke();
+  }
+
+  // Axis border
+  ctx.strokeStyle = COLORS.axis;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0, y0, w, h);
+
+  // Labels
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '11px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < xTicks.length; i++) {
+    const x = x0 + (xTicks[i] / xTicks[xTicks.length - 1]) * w;
+    ctx.fillText(xLabels[i], x, y0 + h + 16);
+  }
+
+  ctx.textAlign = 'right';
+  for (let i = 0; i < yTicks.length; i++) {
+    const y = y0 + h - (yTicks[i] - yTicks[0]) / (yTicks[yTicks.length - 1] - yTicks[0]) * h;
+    ctx.fillText(yLabels[i], x0 - 8, y + 4);
+  }
+
+  // Axis titles
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(xAxisLabel, x0 + w / 2, y0 + h + 34);
+  ctx.save();
+  ctx.translate(x0 - 46, y0 + h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yAxisLabel, 0, 0);
+  ctx.restore();
+}
+
+function plotLine(ctx, data, time, N, x0, y0, w, h, yMin, yMax, totalT, color, lineWidth = 1.5) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  const step = Math.max(1, Math.floor(N / (w * 2)));
+  for (let i = 0; i < N; i += step) {
+    const x = x0 + (time[i] / totalT) * w;
+    const y = y0 + h - ((data[i] - yMin) / (yMax - yMin)) * h;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function niceStep(range, targetTicks) {
+  const rough = range / targetTicks;
+  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / pow;
+  let step;
+  if (norm < 1.5) step = 1;
+  else if (norm < 3.5) step = 2;
+  else if (norm < 7.5) step = 5;
+  else step = 10;
+  return step * pow;
+}
+
+function makeTicks(min, max, targetN) {
+  const step = niceStep(max - min, targetN);
+  const start = Math.ceil(min / step) * step;
+  const ticks = [], labels = [];
+  for (let v = start; v <= max + step * 0.01; v += step) {
+    ticks.push(v);
+    labels.push(Number.isInteger(v) ? v.toString() : v.toFixed(1));
+  }
+  return { ticks, labels };
+}
+
+function drawAll() {
+  const params = getParams();
+  const signals = generateSignals(params);
+  const { up, saw, tri, time, N, totalT } = signals;
+
+  // ---- Time Domain ----
+  {
+    const canvas = $('timeDomain');
+    const { ctx, w, h } = setupCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 60, r: 24, t: 12, b: 42 };
+    const pw = w - pad.l - pad.r;
+    const rowH = (h - pad.t - pad.b - 24) / 3;
+    const gap = 12;
+
+    const configs = [
+      { data: up.re, color: COLORS.up, label: '上扫频' },
+      { data: saw.re, color: COLORS.saw, label: '锯齿波' },
+      { data: tri.re, color: COLORS.tri, label: '三角波' },
+    ];
+
+    const xT = makeTicks(0, totalT, 6);
+
+    configs.forEach((cfg, idx) => {
+      const y0 = pad.t + idx * (rowH + gap);
+
+      drawGrid(ctx, pad.l, y0, pw, rowH,
+        xT.ticks.map(v => v), xT.ticks,
+        idx === 2 ? xT.labels : xT.labels.map(() => ''),
+        ['-1', '0', '1'],
+        idx === 2 ? '时间 t (s)' : '',
+        ''
+      );
+
+      // yTicks for amplitude
+      [-1, 0, 1].forEach(v => {
+        const y = y0 + rowH - ((v + 1) / 2) * rowH;
+        ctx.strokeStyle = COLORS.grid;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(pad.l + pw, y);
+        ctx.stroke();
+
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '10px "JetBrains Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(v.toString(), pad.l - 6, y + 3);
+      });
+
+      // Row label
+      ctx.fillStyle = cfg.color;
+      ctx.font = '11px "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(cfg.label, pad.l + 6, y0 + 14);
+
+      plotLine(ctx, cfg.data, time, N, pad.l, y0, pw, rowH, -1.1, 1.1, totalT, cfg.color, 1.2);
+    });
+  }
+
+  // ---- Freq Plot ----
+  {
+    const canvas = $('freqPlot');
+    const { ctx, w, h } = setupCanvas(canvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 60, r: 24, t: 12, b: 42 };
+    const pw = w - pad.l - pad.r;
+    const ph = h - pad.t - pad.b;
+
+    const maxFreq = params.fL + params.B * (totalT / params.Tsw);
+    const yMin = 0;
+    const yMax = Math.max(params.fH * 1.15, maxFreq * 1.05);
+
+    const xT = makeTicks(0, totalT, 6);
+    const yT = makeTicks(yMin, yMax, 5);
+
+    drawGrid(ctx, pad.l, pad.t, pw, ph,
+      xT.ticks, yT.ticks,
+      xT.labels, yT.labels,
+      '时间 t (s)', '瞬时频率 f(t) (Hz)'
+    );
+
+    // f_L and f_H reference lines
+    [params.fL, params.fH].forEach(fRef => {
+      const y = pad.t + ph - ((fRef - yMin) / (yMax - yMin)) * ph;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(148,163,184,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(pad.l + pw, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(fRef === params.fL ? 'f_L' : 'f_H', pad.l + pw + 4, y + 3);
+    });
+
+    const configs = [
+      { data: up.freq, color: COLORS.up, lw: 2.5 },
+      { data: saw.freq, color: COLORS.saw, lw: 2 },
+      { data: tri.freq, color: COLORS.tri, lw: 2 },
+    ];
+
+    configs.forEach(cfg => {
+      plotLine(ctx, cfg.data, time, N, pad.l, pad.t, pw, ph, yMin, yMax, totalT, cfg.color, cfg.lw);
+    });
+  }
+}
+
+// Event listeners
+['fL', 'fH', 'Tsw'].forEach(id => {
+  $(id).addEventListener('input', drawAll);
+});
+
+window.addEventListener('resize', drawAll);
+drawAll();
+</script>
+
+</body>
+</html>
